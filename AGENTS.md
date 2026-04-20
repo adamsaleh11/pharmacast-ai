@@ -1,203 +1,81 @@
 # PharmaForecast
 
-**PharmaForecast** is an AI-powered drug demand forecasting SaaS for independent pharmacies in Ottawa, Canada.
+PRODUCT: PharmaForecast — an AI-powered drug demand forecasting SaaS for independent pharmacies in Ottawa, Canada.
 
-## Primary Goal
+STACK:
+- Frontend: Next.js (App Router), TypeScript, Tailwind CSS, Shadcn/ui, React Query, Supabase JS client
+- Backend: Java 21, Spring Boot 3+, Spring Security, Spring Data JPA, Flyway, Supabase (PostgreSQL + Realtime + Auth + RLS)
+- Background Jobs: Spring @Scheduled + @Async with a ThreadPoolTaskExecutor (no external queue in v1)
+- Email: Resend (via HTTP client, not SMTP)
+- AI Pipeline: Python FastAPI — two separate services:
+    - forecast_service: Facebook Prophet only (numeric forecasting)
+    - llm_service: xAI Grok API only (explanations, chat, purchase order text)
+- Hosting: Fly.io Toronto (yyz) for Spring Boot + both Python services, Vercel for Next.js, Supabase ca-central-1 for DB
+- Billing: Stripe
 
-Help independent pharmacies:
+COMPLIANCE:
+- All data must stay in Canada (PHIPA + PIPEDA)
+- patient_id must NEVER be sent to Grok, any LLM, or any external API
+- patient_id must never appear in logs, prompts, exports, or generated documents
+- Only aggregated drug-level data (DIN, quantities, dates) is sent to the LLM service
+- Supabase RLS enforces data isolation per tenant
+- Spring Boot validates organization/location ownership server-side on every request — never rely on RLS alone
 
-- upload dispensing history
-- forecast drug demand
-- identify reorder risks
-- understand inventory trends
-- receive proactive alerts
-- generate purchase orders
+CORE DATA MODEL:
+- organizations (id, name, stripe_customer_id, subscription_status, trial_ends_at, created_at, updated_at)
+- locations (id, organization_id, name, address, deactivated_at, created_at, updated_at)
+- users (id, organization_id, email, role: 'owner', created_at, updated_at)
+- drugs (id, din, name, strength, form, therapeutic_class, manufacturer, status, last_refreshed_at, created_at, updated_at)
+- dispensing_records (id, location_id, din, dispensed_date, quantity_dispensed, quantity_on_hand, cost_per_unit nullable, patient_id nullable)
+- forecasts (id, location_id, din, generated_at, forecast_horizon_days, predicted_quantity, confidence: 'HIGH'|'MEDIUM'|'LOW', days_of_supply, reorder_status: 'GREEN'|'AMBER'|'RED', prophet_lower, prophet_upper, avg_daily_demand, reorder_point, data_points_used)
+- drug_thresholds (id, location_id, din, lead_time_days, red_threshold_days, amber_threshold_days, safety_multiplier: 'CONSERVATIVE'|'BALANCED'|'AGGRESSIVE', notifications_enabled)
+- stock_adjustments (id, location_id, din, adjustment_quantity, adjusted_at, note)
+- purchase_orders (id, location_id, generated_at, grok_output text, line_items jsonb, status: 'DRAFT'|'SENT')
+- notifications (id, organization_id, location_id nullable, type, payload jsonb, sent_at nullable, read_at nullable)
+- csv_uploads (id, location_id, filename, status: 'PENDING'|'PROCESSING'|'SUCCESS'|'ERROR', error_message text nullable, row_count nullable, drug_count nullable, validation_summary jsonb nullable, uploaded_at)
+- chat_messages (id, location_id, role: 'user'|'assistant', content, created_at, updated_at)
+- notification_settings (id, organization_id unique, daily_digest_enabled, weekly_insights_enabled, critical_alerts_enabled, created_at, updated_at)
 
----
+FEATURES ALREADY DECIDED:
+- CSV upload is the only data ingestion method for v1
+- Prophet runs ON DEMAND when Generate is clicked (plus silent background notification check via @Scheduled)
+- LLM only fires when: Explain clicked, Chat message sent, Purchase order generated
+- Multi-location: patient data isolated per location, aggregated demand signals shareable across locations
+- Savings calculation: variance-based (recommended qty vs actual qty × cost_per_unit)
+- Health Canada DIN API enriches drug metadata on CSV upload, refreshed weekly via @Scheduled
 
-## System Architecture
+DEFAULT BUSINESS SETTINGS:
+- Default lead_time_days = 2
+- Default red_threshold_days = 3
+- Default amber_threshold_days = 7
+- Safety multiplier: CONSERVATIVE = 1.5, BALANCED = 1.0, AGGRESSIVE = 0.75
 
-### Frontend
+SPRING BOOT CONVENTIONS (apply everywhere):
+- Package root: com.pharmaforecast
+- All controllers annotated @RestController + @RequestMapping
+- All services annotated @Service + @Transactional where appropriate
+- All repositories extend JpaRepository<Entity, UUID>
+- DTOs use Java records (or @Data Lombok classes) — never expose JPA entities directly
+- Validation via @Valid + Jakarta Bean Validation annotations
+- Global exception handler via @RestControllerAdvice
+- Auth context via custom principal injected by Spring Security filter
+- Configuration in application.yml with spring.profiles.active = local | prod
+- All IDs are UUIDs
+- All timestamps are UTC OffsetDateTime in DB, serialized as ISO-8601 strings in JSON
+- Flyway migrations in src/main/resources/db/migration/V{n}__{description}.sql
 
-- Next.js (App Router)
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- React Query
+## SPECIAL RECALLS
 
-### Core Backend
-
-- Java Spring Boot 3+
-- Java 21
-- Spring Security
-- Spring Data JPA
-- Flyway
-- PostgreSQL
-
-### Database / Auth / Realtime
-
-- Supabase
-  - PostgreSQL
-  - Auth
-  - Realtime
-  - RLS
-
-### Forecasting Pipeline
-
-- Python FastAPI
-- Prophet
-
-### LLM Pipeline
-
-- Python FastAPI
-- Grok Cloud lightweight model
-
-### Email
-
-- Resend
-
-### Billing
-
-- Stripe
-
-### Hosting
-
-- Vercel for Next.js
-- Fly.io Toronto region (`yyz`) for Spring Boot
-- Fly.io Toronto region (`yyz`) for Python forecast service
-- Fly.io Toronto region (`yyz`) for Python LLM service
-- Supabase Canada region for PostgreSQL/Auth
-
----
-
-## Critical Architecture Rules
-
-- Spring Boot is the orchestration and enforcement layer.
-- Spring Boot owns:
-  - auth validation
-  - organization/location authorization
-  - business logic
-  - DB reads/writes
-  - persistence
-  - notifications
-  - billing
-  - all calls to Python services
-  - sanitization before any LLM request
-- Forecast service owns numeric forecasting only.
-- LLM service owns language generation only.
-- Forecast service never generates explanations or chat responses.
-- LLM service never generates forecast numbers.
-- Frontend never calls Python services directly.
-- Frontend only talks to Spring Boot APIs and Supabase Auth/session state.
-
----
-
-## Compliance Rules
-
-- All data should remain in Canada where possible.
-- `patient_id` may exist in database but must never be sent to Grok or any external LLM.
-- `patient_id` must never appear in logs, prompts, exports, chat context, or generated purchase orders.
-- Only aggregated drug-level data may be sent to the LLM service.
-- The product supports inventory decisions, not medical or prescribing decisions.
-- Supabase RLS must isolate tenant data.
-- Organization/location ownership must always be validated server-side, even if RLS exists.
-
----
-
-## Core Domain Model
-
-- organizations
-- locations
-- users
-- drugs
-- dispensing_records
-- forecasts
-- drug_thresholds
-- stock_adjustments
-- purchase_orders
-- notifications
-- csv_uploads
-- chat_messages
-- notification_settings
-
----
-
-## Product Rules
-
-- CSV upload is the only ingestion method for v1.
-- Forecasts are generated on demand when the pharmacist clicks **Generate**.
-- Notification jobs may run forecast checks silently in the background.
-- Grok is only used for:
-  1. written forecast explanations
-  2. chat assistant responses
-  3. purchase order drafting
-- Prophet is the only forecasting engine in v1.
-- Multi-location is supported.
-- Network-level demand can be used only as aggregated supplemental signal.
-- Savings calculations must be evidence-based and never fabricated.
-- UTC for persisted timestamps.
-- ET for user-facing scheduling and notification timing.
-- UUIDs for all primary keys.
-
----
-
-## Default Business Settings
-
-- Default `lead_time_days = 2`
-- Default `red_threshold_days = 3`
-- Default `amber_threshold_days = 7`
-
-### Safety Multiplier Mapping
-
-- `conservative = 1.5`
-- `balanced = 1.0`
-- `aggressive = 0.75`
-
----
-
-## Forecast Rules
-
-- Prophet must never run on fewer than 14 data points.
-- Forecast horizons: 7, 14, 30 days.
-- Quantities must be integers.
-- Days of supply rounded to 1 decimal place.
-- Forecast confidence derived from prediction interval width.
-- Forecast service must return structured errors.
-- Spring Boot persists forecasts, not Python.
-
----
-
-## LLM Rules
-
-- LLM service receives only sanitized, structured payloads from Spring Boot.
-- LLM service must validate payload schema.
-- LLM prompts must never include patient-level fields.
-- LLM outputs should be concise, professional, and pharmacy-friendly.
-- Temperature should be low and deterministic.
-- LLM service should support explanation, chat, and purchase-order drafting separately.
-- LLM caching can exist at the Spring Boot layer and/or LLM layer where appropriate.
-
----
-
-## Design Direction
-
-- clinical
-- trustworthy
-- modern
-- fast
-- readable under pressure
-- deep navy primary
-- teal accent
-- crisp white surfaces
-- compact but clear data density
-
----
-
-## Engineering Rules
-
-- Build production-quality folder structures.
-- Prefer explicit DTOs and schemas.
-- Prefer clean integration contracts between agents.
-- If an upstream dependency is not yet built, write integration-ready code with TODO markers, mocks, or clear interfaces.
-- Do not invent incompatible API shapes.
-- Respect ownership boundaries between services.
+- The Python forecast service foundation now lives in this repo under `apps/forecast_service`.
+- The forecast ASGI import path is `apps.forecast_service.app.main:app`.
+- The forecast service currently exposes only `GET /health`, returning exactly `{"status": "ok"}`.
+- Forecast service config is in `shared/config/settings.py` and models `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `PORT`.
+- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are intentionally optional for the foundation; `/health` and app import must not require live Supabase credentials.
+- `PORT` defaults to `8000`.
+- The forecast service Dockerfile is `apps/forecast_service/Dockerfile` and runs `uvicorn apps.forecast_service.app.main:app`.
+- Prophet is intentionally not installed yet; add it only when real forecasting behavior is implemented.
+- `apps/forecast_service/app/api/forecasts.py`, `ForecastPlaceholder`, and `ForecastService.ready()` are placeholders, not finalized forecast contracts.
+- The `apps/llm_service` package exists only as a boundary placeholder; no LLM behavior is implemented there yet.
+- Keep all chat, explanation, prompt, Grok, and purchase-order language logic out of `apps/forecast_service`.
+- Contract handoff for the forecast foundation is `docs/contracts/forecast-service-foundation.md`; read it before extending the Python service.
+- Local verification for the forecast foundation is `python3 -m pytest`; the latest observed result was 7 passing tests.
