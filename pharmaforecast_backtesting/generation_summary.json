@@ -1,0 +1,43 @@
+{
+  "source_rows": 336,
+  "source_weeks": 56,
+  "num_dins": 6,
+  "main_tests": [
+    {
+      "test_name": "test_01_next_1_period",
+      "train_row_count": 312,
+      "actual_row_count": 6,
+      "train_start_date": "2025-04-07",
+      "train_end_date": "2026-03-30",
+      "actual_start_date": "2026-04-06",
+      "actual_end_date": "2026-04-06",
+      "num_dins": 6,
+      "notes": "Weekly Monday-aligned aggregated fixture; 52 training weeks per DIN; designed to satisfy Prophet history gate."
+    },
+    {
+      "test_name": "test_02_next_2_periods",
+      "train_row_count": 300,
+      "actual_row_count": 12,
+      "train_start_date": "2025-04-07",
+      "train_end_date": "2026-03-16",
+      "actual_start_date": "2026-03-23",
+      "actual_end_date": "2026-03-30",
+      "num_dins": 6,
+      "notes": "Weekly Monday-aligned aggregated fixture; 50 training weeks per DIN; designed to satisfy Prophet history gate."
+    },
+    {
+      "test_name": "test_03_next_4_periods",
+      "train_row_count": 288,
+      "actual_row_count": 24,
+      "train_start_date": "2025-04-07",
+      "train_end_date": "2026-03-02",
+      "actual_start_date": "2026-03-09",
+      "actual_end_date": "2026-03-30",
+      "num_dins": 6,
+      "notes": "Weekly Monday-aligned aggregated fixture; 48 training weeks per DIN; designed to satisfy Prophet history gate."
+    }
+  ],
+  "rolling_steps": 26,
+  "all_dates_monday_aligned": true,
+  "duplicate_din_date_rows": 0
+}

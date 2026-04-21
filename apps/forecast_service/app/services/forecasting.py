@@ -14,7 +14,7 @@ from apps.forecast_service.app.schemas.forecast import (
 )
 from apps.forecast_service.app.services.domain import ForecastResult
 from apps.forecast_service.app.services.history import DemandHistoryPreparer
-from apps.forecast_service.app.services.model import ForecastModelRunner, ProphetModelRunner
+from apps.forecast_service.app.services.model import ForecastModelRunner, XGBoostModelRunner
 from apps.forecast_service.app.services.repository import DispensingRepository, SupabaseDispensingRepository
 
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 FORECAST_TIMEOUT_SECONDS = 30
 DEFAULT_RED_THRESHOLD_DAYS = 3
 DEFAULT_AMBER_THRESHOLD_DAYS = 7
-FORECAST_CODE_PATH = "weekly-normalized-samples-v2"
+FORECAST_CODE_PATH = "weekly-xgboost-residual-v1"
 
 
 def build_insufficient_data_response() -> dict[str, Any]:
@@ -103,6 +103,7 @@ class ForecastEngine:
             prophet_lower=prediction.prophet_lower,
             prophet_upper=prediction.prophet_upper,
             confidence=prediction.confidence,
+            model_path=prediction.model_path,
             days_of_supply=days_of_supply,
             avg_daily_demand=avg_daily_demand,
             reorder_status=reorder_status,
@@ -259,7 +260,7 @@ def _reorder_status(days_of_supply: float, red_threshold_days: int, amber_thresh
 def create_default_engine() -> ForecastEngine:
     return ForecastEngine(
         repository=SupabaseDispensingRepository(),
-        model_runner=ProphetModelRunner(),
+        model_runner=XGBoostModelRunner(),
     )
 
 

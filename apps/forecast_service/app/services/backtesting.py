@@ -140,6 +140,7 @@ def _run_rolling_origin(
         "usable_rows": preprocessing["usable_rows"],
         "min_required_rows": preprocessing["min_required_rows"],
         "date_range": preprocessing["date_range"],
+        "model_path_counts": _model_path_counts(combined_forecast_rows),
         "din_count": int(combined_forecast_rows["din"].nunique()) if not combined_forecast_rows.empty else 0,
         "artifact_path": str(artifact_root) if request.debug_artifacts else None,
     }
@@ -183,6 +184,7 @@ def _summary_payload(result: dict[str, Any], model_version: str, generated_at: s
         "min_required_rows": result["min_required_rows"],
         "date_range": result["date_range"],
         "ready_for_forecast": status == "PASS",
+        "model_path_counts": result["model_path_counts"],
         "din_count": result["din_count"],
         "generated_at": generated_at,
         "error_message": None,
@@ -217,6 +219,7 @@ def _failure_payload(
         "min_required_rows": preprocessing["min_required_rows"],
         "date_range": preprocessing["date_range"],
         "ready_for_forecast": False,
+        "model_path_counts": {},
         "din_count": din_count,
         "generated_at": generated_at,
         "error_message": error_message,
@@ -242,6 +245,7 @@ def _error_payload(model_version: str, generated_at: str, error_message: str) ->
         "min_required_rows": MIN_TRAINING_PERIODS,
         "date_range": None,
         "ready_for_forecast": False,
+        "model_path_counts": {},
         "din_count": None,
         "generated_at": generated_at,
         "error_message": error_message,
@@ -252,9 +256,9 @@ def _error_payload(model_version: str, generated_at: str, error_message: str) ->
 def _status_for(result: dict[str, Any]) -> str:
     if result["anomaly_count"] > 0:
         return "FAIL"
-    beats_any_baseline = result["beats_last_7_day_avg"] or result["beats_last_14_day_avg"]
+    beats_all_baselines = result["beats_last_7_day_avg"] and result["beats_last_14_day_avg"]
     if (
-        beats_any_baseline
+        beats_all_baselines
         and result["wape"] is not None
         and result["wape"] <= PASS_WAPE_THRESHOLD
         and result["interval_coverage"] is not None
@@ -282,3 +286,9 @@ def _better_than(model_mae: float | None, baseline_mae: float | None) -> bool | 
     if model_mae is None or baseline_mae is None:
         return None
     return model_mae < baseline_mae
+
+
+def _model_path_counts(forecast_rows: pd.DataFrame) -> dict[str, int]:
+    if "model_path" not in forecast_rows:
+        return {}
+    return {str(key): int(value) for key, value in forecast_rows["model_path"].value_counts().sort_index().items()}

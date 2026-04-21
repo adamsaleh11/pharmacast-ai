@@ -25,7 +25,7 @@ from forecasting.metrics import (
     compute_stockout_risk_proxy,
     evaluate_trend_justification,
 )
-from forecasting.model import ForecastGenerator, ProphetForecastGenerator
+from forecasting.model import ForecastGenerator, XGBoostForecastGenerator
 from forecasting.reporting import ensure_output_dir, write_dataframe_artifacts, write_json_artifact
 
 
@@ -63,7 +63,7 @@ class BacktestRunner:
         self,
         forecaster: ForecastGenerator | None = None,
     ) -> None:
-        self.forecaster = forecaster or ProphetForecastGenerator()
+        self.forecaster = forecaster or XGBoostForecastGenerator()
 
     def run(self, config: BacktestRunConfig) -> BacktestRunResult:
         started_at = datetime.now(timezone.utc)
@@ -210,6 +210,7 @@ class BacktestRunner:
                 yhat = float(row["yhat"])
                 yhat_lower = float(row["yhat_lower"]) if pd.notna(row["yhat_lower"]) else None
                 yhat_upper = float(row["yhat_upper"]) if pd.notna(row["yhat_upper"]) else None
+                model_path = str(row.get("model_path", "unknown"))
                 anomaly_flag, anomaly_reason = _detect_anomalies(
                     yhat=yhat,
                     yhat_lower=yhat_lower,
@@ -235,6 +236,7 @@ class BacktestRunner:
                     "train_end_date": train_end_date,
                     "horizon_length": horizon_length,
                     "history_points_used": history_points_used,
+                    "model_path": model_path,
                     "confidence_label": _confidence_label(yhat, yhat_lower, yhat_upper),
                     "anomaly_flag": anomaly_flag,
                     "anomaly_reason": anomaly_reason,
@@ -263,6 +265,7 @@ class BacktestRunner:
             model_version=config.model_version,
             backtest_name=config.backtest_name,
         )
+        global_metrics["model_path_counts"] = _model_path_counts(forecast_rows)
         summary = _build_summary(global_metrics, forecast_rows, anomalies, config, started_at, run_id)
 
         output_dir = ensure_output_dir(config.outdir)
@@ -363,6 +366,12 @@ def _is_better(model_mae: float | None, baseline_mae: float | None) -> bool | No
     if model_mae is None or baseline_mae is None:
         return None
     return model_mae < baseline_mae
+
+
+def _model_path_counts(forecast_rows: pd.DataFrame) -> dict[str, int]:
+    if "model_path" not in forecast_rows:
+        return {}
+    return {str(key): int(value) for key, value in forecast_rows["model_path"].value_counts().sort_index().items()}
 
 
 def _global_metrics(

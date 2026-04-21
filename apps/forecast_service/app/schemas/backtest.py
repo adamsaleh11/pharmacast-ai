@@ -18,7 +18,7 @@ class BacktestUploadRequest(BaseModel):
     organization_id: str
     location_id: str
     csv_upload_id: str
-    model_version: str = "prophet_v1"
+    model_version: str = "xgboost_residual_v1"
     rows: list[BacktestDemandRow] = Field(min_length=1)
     debug_artifacts: bool = False
 
@@ -40,6 +40,7 @@ class BacktestUploadSummary(BaseModel):
     min_required_rows: Optional[int] = None
     date_range: Optional[dict[str, Optional[str]]] = None
     ready_for_forecast: bool = False
+    model_path_counts: dict[str, int] = Field(default_factory=dict)
     din_count: Optional[int] = None
     generated_at: str
     error_message: Optional[str] = None

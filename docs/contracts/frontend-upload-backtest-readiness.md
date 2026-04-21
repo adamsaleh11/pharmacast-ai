@@ -45,6 +45,7 @@
   - `min_required_rows`
   - `date_range`
   - `ready_for_forecast`
+  - `model_path_counts`
   - `din_count`
   - `error_message`
   - `artifact_path`
@@ -86,6 +87,9 @@
         "end": "2026-04-13"
       },
       "ready_for_forecast": true,
+      "model_path_counts": {
+        "fallback_recent_trend": 60
+      },
       "din_count": 5,
       "generated_at": "2026-04-21T05:00:00+00:00",
       "error_message": null,
@@ -142,6 +146,7 @@ Display compact metrics: WAPE 1.8%, interval coverage 91.7%, 5 DINs evaluated.
   - `min_required_rows: number | null`.
   - `date_range: { start: string | null; end: string | null } | null`.
   - `ready_for_forecast: boolean`.
+  - `model_path_counts: Record<string, number>`.
   - `din_count: number | null`.
   - `generated_at: string`.
   - `error_message: string | null`.
@@ -161,6 +166,11 @@ Display compact metrics: WAPE 1.8%, interval coverage 91.7%, 5 DINs evaluated.
   - `usable_rows` is the row count after weekly DIN-level preprocessing.
   - `rows_evaluated` is the number of backtest forecast-vs-actual rows, not the upload row count.
   - `ready_for_forecast` is true only when the summary passed the quality gate.
+  - `model_path_counts` tells which forecast path was used during evaluation.
+- Current model path values:
+  - `prophet`: guarded Prophet ran successfully.
+  - `fallback_recent_trend`: not enough weekly history for Prophet, so recent-demand/trend fallback was used.
+  - `fallback_unsafe_prophet_output`: Prophet ran but produced unsafe values, so fallback replaced it.
 - Migration notes:
   - No frontend migration; update API types once backend exposes this object.
 - Backward compatibility notes:
@@ -316,6 +326,10 @@ python3 -m pytest
 - Final DTO/model names:
   - Recommended frontend type: `BacktestReadiness`.
   - Python DTO: `BacktestUploadSummary`.
+- Final model path values:
+  - `prophet`
+  - `fallback_recent_trend`
+  - `fallback_unsafe_prophet_output`
 - Final key files:
   - `apps/forecast_service/app/schemas/backtest.py`
   - `apps/forecast_service/app/api/backtests.py`

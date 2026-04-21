@@ -88,6 +88,9 @@
     "end": "2026-04-13"
   },
   "ready_for_forecast": true,
+  "model_path_counts": {
+    "fallback_recent_trend": 60
+  },
   "din_count": 5,
   "generated_at": "2026-04-21T05:00:00+00:00",
   "error_message": null,
@@ -164,6 +167,7 @@
   - `min_required_rows: int | null`.
   - `date_range: object | null` with `start: string | null` and `end: string | null`.
   - `ready_for_forecast: boolean`.
+  - `model_path_counts: object`, mapping model path string to evaluated row count.
   - `din_count: int | null`.
   - `generated_at: str`, required, UTC ISO-8601 string with `+00:00`.
   - `error_message: str | null`.
@@ -212,6 +216,11 @@
 - Backend must provide patient-free rows with exact fields `dispensed_date`, `din`, `quantity_dispensed`, optional `cost_per_unit`.
 - Backend receives a summary object and should save it unchanged under `csv_uploads.validation_summary.backtest`.
 - Backend should treat `raw_rows_received`, `usable_rows`, `rows_evaluated`, `min_required_rows`, `date_range`, and `ready_for_forecast` as the canonical explanation fields for readiness.
+- Backend should persist `model_path_counts` unchanged so frontend can tell whether the backtest used Prophet or fallback.
+- Model path values currently produced by Python:
+  - `prophet`
+  - `fallback_recent_trend`
+  - `fallback_unsafe_prophet_output`
 - Loading states to handle: upload stored but backtest not started; backtest running; summary stored.
 - Empty states to handle: `validation_summary = null`; `validation_summary.backtest = null`.
 - Success states to handle: `PASS`, `LOW_CONFIDENCE`.
@@ -306,6 +315,7 @@ python3 -m pytest
 - Final row DTO: `BacktestDemandRow`.
 - Final summary DTO: `BacktestUploadSummary`.
 - Final status values: `PASS`, `LOW_CONFIDENCE`, `FAIL`, `ERROR`.
+- Final model path values: `prophet`, `fallback_recent_trend`, `fallback_unsafe_prophet_output`.
 - Key Python files:
   - `apps/forecast_service/app/api/backtests.py`
   - `apps/forecast_service/app/schemas/backtest.py`

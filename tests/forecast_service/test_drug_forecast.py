@@ -7,7 +7,12 @@ from fastapi.testclient import TestClient
 from apps.forecast_service.app.main import app
 from apps.forecast_service.app.services.domain import ForecastPrediction
 from apps.forecast_service.app.services.forecasting import ForecastEngine
-from apps.forecast_service.app.services.model import ProphetModelRunner, normalize_weekly_history, summarize_horizon_forecast
+from apps.forecast_service.app.services.model import (
+    ProphetModelRunner,
+    XGBoostModelRunner,
+    normalize_weekly_history,
+    summarize_horizon_forecast,
+)
 
 
 class _FakeRepository:
@@ -32,6 +37,7 @@ class _FakeModelRunner:
             prophet_lower=18,
             prophet_upper=24,
             confidence="MEDIUM",
+            model_path="prophet",
         )
         self.weekly_rows = None
 
@@ -52,6 +58,7 @@ class _InvalidModelRunner:
             prophet_lower=0,
             prophet_upper=-345,
             confidence="LOW",
+            model_path="prophet",
         )
 
 
@@ -207,8 +214,9 @@ def test_single_drug_forecast_returns_operational_metrics(monkeypatch):
     assert payload["reorder_status"] == "GREEN"
     assert payload["reorder_point"] == 3.0
     assert payload["data_points_used"] == 30
+    assert payload["model_path"] == "prophet"
     assert payload["generated_at"].endswith("+00:00")
-    assert response.headers["x-forecast-code-path"] == "weekly-normalized-samples-v2"
+    assert response.headers["x-forecast-code-path"] == "weekly-xgboost-residual-v1"
 
 
 def test_single_drug_forecast_uses_explicit_reorder_thresholds(monkeypatch):
@@ -220,6 +228,7 @@ def test_single_drug_forecast_uses_explicit_reorder_thresholds(monkeypatch):
                 prophet_lower=130,
                 prophet_upper=150,
                 confidence="MEDIUM",
+                model_path="prophet",
             )
         ),
     )
@@ -258,6 +267,7 @@ def test_single_drug_forecast_uses_request_stock_for_days_of_supply(monkeypatch)
                 prophet_lower=770,
                 prophet_upper=790,
                 confidence="HIGH",
+                model_path="prophet",
             )
         ),
     )
@@ -330,6 +340,7 @@ def test_batch_forecast_streams_completion_events(monkeypatch):
                 prophet_lower=8,
                 prophet_upper=12,
                 confidence="HIGH",
+                model_path="prophet",
             )
         ),
     )
@@ -495,6 +506,23 @@ def test_prophet_runner_uses_non_negative_fallback_for_short_weekly_history():
     prediction = ProphetModelRunner().forecast(weekly_rows, horizon_days=7)
 
     assert prediction.predicted_quantity == 66
+    assert prediction.model_path == "fallback_recent_trend"
+    assert prediction.prophet_lower >= 0
+    assert prediction.prophet_lower <= prediction.predicted_quantity <= prediction.prophet_upper
+    assert prediction.confidence in {"LOW", "MEDIUM", "HIGH"}
+
+
+def test_xgboost_runner_returns_calibrated_non_negative_interval():
+    quantities = [20, 21, 23, 22, 24, 25, 27, 26, 28, 30, 31, 30, 32, 33, 35, 34]
+    weekly_rows = [
+        {"ds": date(2026, 1, 5) + timedelta(days=7 * offset), "y": quantity}
+        for offset, quantity in enumerate(quantities)
+    ]
+
+    prediction = XGBoostModelRunner().forecast(weekly_rows, horizon_days=7)
+
+    assert prediction.model_path == "xgboost_residual_interval"
+    assert prediction.predicted_quantity >= 0
     assert prediction.prophet_lower >= 0
     assert prediction.prophet_lower <= prediction.predicted_quantity <= prediction.prophet_upper
     assert prediction.confidence in {"LOW", "MEDIUM", "HIGH"}

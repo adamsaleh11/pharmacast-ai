@@ -6,7 +6,9 @@ from apps.forecast_service.app.main import app
 
 def _fixture_rows():
     frame = pd.read_csv("pharmaforecast_backtesting/pharmaforecast_test_dispensing_v2 copy.csv", dtype={"din": str})
-    return frame.to_dict(orient="records")
+    safe_frame = frame.loc[:, ["dispensed_date", "din", "quantity_dispensed", "cost_per_unit"]].astype(object)
+    safe_frame = safe_frame.where(pd.notna(safe_frame), None)
+    return safe_frame.to_dict(orient="records")
 
 
 def test_backtest_upload_returns_pass_summary_for_uploaded_fixture():
@@ -18,7 +20,7 @@ def test_backtest_upload_returns_pass_summary_for_uploaded_fixture():
             "organization_id": "11111111-1111-1111-1111-111111111111",
             "location_id": "22222222-2222-2222-2222-222222222222",
             "csv_upload_id": "33333333-3333-3333-3333-333333333333",
-            "model_version": "prophet_v1",
+            "model_version": "xgboost_residual_v1",
             "debug_artifacts": False,
             "rows": _fixture_rows(),
         },
@@ -27,7 +29,7 @@ def test_backtest_upload_returns_pass_summary_for_uploaded_fixture():
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "PASS"
-    assert payload["model_version"] == "prophet_v1"
+    assert payload["model_version"] == "xgboost_residual_v1"
     assert payload["mae"] < payload["baseline_last_7_day_avg_mae"]
     assert payload["mae"] < payload["baseline_last_14_day_avg_mae"]
     assert payload["wape"] <= 0.2
@@ -36,12 +38,14 @@ def test_backtest_upload_returns_pass_summary_for_uploaded_fixture():
     assert payload["beats_last_7_day_avg"] is True
     assert payload["beats_last_14_day_avg"] is True
     assert payload["rows_evaluated"] > 0
-    assert payload["raw_rows_received"] == 100
-    assert payload["usable_rows"] == 100
+    assert payload["raw_rows_received"] == 336
+    assert payload["usable_rows"] == 336
     assert payload["min_required_rows"] == 8
-    assert payload["date_range"] == {"start": "2025-12-01", "end": "2026-04-13"}
+    assert payload["date_range"] == {"start": "2025-04-07", "end": "2026-04-27"}
     assert payload["ready_for_forecast"] is True
-    assert payload["din_count"] == 5
+    assert payload["rows_evaluated"] == 72
+    assert payload["model_path_counts"] == {"xgboost_residual_interval": 72}
+    assert payload["din_count"] == 6
     assert payload["artifact_path"] is None
     assert payload["generated_at"].endswith("+00:00")
 
@@ -57,7 +61,7 @@ def test_backtest_upload_rejects_patient_identifiers():
             "organization_id": "11111111-1111-1111-1111-111111111111",
             "location_id": "22222222-2222-2222-2222-222222222222",
             "csv_upload_id": "33333333-3333-3333-3333-333333333333",
-            "model_version": "prophet_v1",
+            "model_version": "xgboost_residual_v1",
             "rows": rows,
         },
     )
@@ -75,7 +79,7 @@ def test_backtest_upload_returns_fail_summary_for_insufficient_history():
             "organization_id": "11111111-1111-1111-1111-111111111111",
             "location_id": "22222222-2222-2222-2222-222222222222",
             "csv_upload_id": "33333333-3333-3333-3333-333333333333",
-            "model_version": "prophet_v1",
+            "model_version": "xgboost_residual_v1",
             "rows": [
                 {
                     "dispensed_date": "2026-01-05",
@@ -96,7 +100,7 @@ def test_backtest_upload_returns_fail_summary_for_insufficient_history():
     assert response.status_code == 200
     assert response.json() == {
         "status": "FAIL",
-        "model_version": "prophet_v1",
+        "model_version": "xgboost_residual_v1",
         "mae": None,
         "wape": None,
         "interval_coverage": None,
@@ -111,6 +115,7 @@ def test_backtest_upload_returns_fail_summary_for_insufficient_history():
         "min_required_rows": 8,
         "date_range": {"start": "2026-01-05", "end": "2026-01-12"},
         "ready_for_forecast": False,
+        "model_path_counts": {},
         "din_count": 1,
         "generated_at": response.json()["generated_at"],
         "error_message": "insufficient_backtest_history",

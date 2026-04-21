@@ -8,11 +8,24 @@ import pandas as pd
 
 from apps.forecast_service.app.services.model import (
     MIN_YEARLY_SEASONALITY_POINTS,
+    MODEL_PATH_FALLBACK_RECENT_TREND,
+    MODEL_PATH_FALLBACK_UNSAFE_PROPHET,
+    MODEL_PATH_FALLBACK_UNSAFE_XGBOOST,
+    MODEL_PATH_PROPHET,
+    MODEL_PATH_XGBOOST_RESIDUAL,
     build_ontario_holidays,
+    build_xgboost_training_frame,
+    complete_weekly_history,
     fallback_weekly_forecast,
     forecast_has_unsafe_values,
     history_supports_prophet,
+    history_supports_xgboost,
     normalize_weekly_history,
+    recursive_xgboost_point_forecast,
+    xgboost_boost_rounds,
+    xgboost_feature_columns,
+    xgboost_point_params,
+    xgboost_residual_spread,
 )
 from forecasting.exceptions import BacktestError
 
@@ -30,6 +43,56 @@ class ForecastGenerator(Protocol):
         """Return one row per forecast period with forecast_date and interval columns."""
 
 
+class XGBoostForecastGenerator:
+    """Weekly XGBoost forecaster that mirrors the production numeric forecast settings."""
+
+    def forecast(self, train_rows: pd.DataFrame, horizon_length: int) -> pd.DataFrame:
+        history = complete_weekly_history(normalize_weekly_history(train_rows.to_dict(orient="records")))
+        if history.empty:
+            raise BacktestError("empty_training_history")
+
+        if not history_supports_xgboost(history):
+            return _forecast_frame_from_model_frame(
+                fallback_weekly_forecast(history, horizon_length),
+                model_path=MODEL_PATH_FALLBACK_RECENT_TREND,
+            )
+
+        train_frame = build_xgboost_training_frame(history)
+        if train_frame.empty:
+            return _forecast_frame_from_model_frame(
+                fallback_weekly_forecast(history, horizon_length),
+                model_path=MODEL_PATH_FALLBACK_RECENT_TREND,
+            )
+
+        try:
+            import xgboost as xgb
+        except ImportError as exc:  # pragma: no cover - optional runtime dependency
+            raise BacktestError("forecast_dependencies_missing") from exc
+
+        features = train_frame[xgboost_feature_columns()].to_numpy(dtype=float)
+        target = train_frame["target"].to_numpy(dtype=float)
+        matrix = xgb.DMatrix(features, target)
+        booster = xgb.train(
+            xgboost_point_params(),
+            matrix,
+            num_boost_round=xgboost_boost_rounds(len(train_frame)),
+            verbose_eval=False,
+        )
+        residual_spread = xgboost_residual_spread(target, booster.inplace_predict(features))
+        forecast = recursive_xgboost_point_forecast(
+            booster=booster,
+            history=history,
+            horizon_periods=horizon_length,
+            residual_spread=residual_spread,
+        )
+        if forecast_has_unsafe_values(forecast):
+            return _forecast_frame_from_model_frame(
+                fallback_weekly_forecast(history, horizon_length),
+                model_path=MODEL_PATH_FALLBACK_UNSAFE_XGBOOST,
+            )
+        return _forecast_frame_from_model_frame(forecast, model_path=MODEL_PATH_XGBOOST_RESIDUAL)
+
+
 class ProphetForecastGenerator:
     """Weekly Prophet forecaster that mirrors the production numeric forecast settings."""
 
@@ -41,7 +104,10 @@ class ProphetForecastGenerator:
         if len(history) < 2:
             return _naive_forecast(history, horizon_length)
         if not history_supports_prophet(history):
-            return _forecast_frame_from_model_frame(fallback_weekly_forecast(history, horizon_length))
+            return _forecast_frame_from_model_frame(
+                fallback_weekly_forecast(history, horizon_length),
+                model_path=MODEL_PATH_FALLBACK_RECENT_TREND,
+            )
 
         try:
             from prophet import Prophet
@@ -66,11 +132,14 @@ class ProphetForecastGenerator:
         except Exception:
             return _naive_forecast(history, horizon_length)
         if forecast_has_unsafe_values(forecast):
-            return _forecast_frame_from_model_frame(fallback_weekly_forecast(history, horizon_length))
+            return _forecast_frame_from_model_frame(
+                fallback_weekly_forecast(history, horizon_length),
+                model_path=MODEL_PATH_FALLBACK_UNSAFE_PROPHET,
+            )
 
         return forecast.rename(
             columns={"ds": "forecast_date", "yhat": "yhat", "yhat_lower": "yhat_lower", "yhat_upper": "yhat_upper"}
-        )[["forecast_date", "yhat", "yhat_lower", "yhat_upper"]]
+        ).assign(model_path=MODEL_PATH_PROPHET)[["forecast_date", "yhat", "yhat_lower", "yhat_upper", "model_path"]]
 
 
 def _naive_forecast(history: pd.DataFrame, horizon_length: int) -> pd.DataFrame:
@@ -87,11 +156,12 @@ def _naive_forecast(history: pd.DataFrame, horizon_length: int) -> pd.DataFrame:
             "yhat": [center for _ in range(horizon_length)],
             "yhat_lower": [lower for _ in range(horizon_length)],
             "yhat_upper": [upper for _ in range(horizon_length)],
+            "model_path": [MODEL_PATH_FALLBACK_RECENT_TREND for _ in range(horizon_length)],
         }
     )
 
 
-def _forecast_frame_from_model_frame(frame: pd.DataFrame) -> pd.DataFrame:
+def _forecast_frame_from_model_frame(frame: pd.DataFrame, model_path: str) -> pd.DataFrame:
     return frame.rename(
         columns={"ds": "forecast_date", "yhat": "yhat", "yhat_lower": "yhat_lower", "yhat_upper": "yhat_upper"}
-    )[["forecast_date", "yhat", "yhat_lower", "yhat_upper"]]
+    ).assign(model_path=model_path)[["forecast_date", "yhat", "yhat_lower", "yhat_upper", "model_path"]]

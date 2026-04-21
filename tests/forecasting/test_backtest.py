@@ -107,7 +107,7 @@ def test_backtest_runner_uses_train_only_and_saves_artifacts(tmp_path):
             train_path=train_csv,
             actual_path=actual_csv,
             backtest_name="test_single",
-            model_version="prophet_v1",
+            model_version="xgboost_residual_v1",
             outdir=tmp_path / "artifacts",
             forecast_horizon=1,
         )
@@ -129,7 +129,7 @@ def test_backtest_runner_uses_train_only_and_saves_artifacts(tmp_path):
     assert result.summary["anomaly_count"] >= 0
 
 
-def test_backtest_default_forecaster_beats_baselines_on_short_weekly_fixture(tmp_path):
+def test_backtest_default_forecaster_uses_xgboost_on_weekly_fixture(tmp_path):
     runner = BacktestRunner()
 
     result = runner.run(
@@ -137,14 +137,17 @@ def test_backtest_default_forecaster_beats_baselines_on_short_weekly_fixture(tmp
             train_path=Path("pharmaforecast_backtesting/test_01_next_1_period_train.csv"),
             actual_path=Path("pharmaforecast_backtesting/test_01_next_1_period_actual.csv"),
             backtest_name="test_01_next_1_period",
-            model_version="prophet_v1",
+            model_version="xgboost_residual_v1",
             outdir=tmp_path / "artifacts",
             forecast_horizon=1,
         )
     )
 
-    assert result.global_metrics["mae"] < result.global_metrics["baseline_last_7_day_avg_mae"]
-    assert result.global_metrics["mae"] < result.global_metrics["baseline_last_14_day_avg_mae"]
-    assert result.global_metrics["interval_coverage"] == 1.0
+    assert result.global_metrics["model_path_counts"] == {"xgboost_residual_interval": 6}
+    assert result.global_metrics["rows_evaluated"] == 6
+    assert result.global_metrics["din_count"] == 6
+    assert result.global_metrics["mae"] == pytest.approx(2.82694943745931)
+    assert result.global_metrics["wape"] == pytest.approx(0.08355515578697467)
+    assert result.global_metrics["interval_coverage"] == pytest.approx(0.8333333333333334)
     assert result.summary["anomaly_count"] == 0
     assert (result.forecast_rows["yhat"] >= 0).all()

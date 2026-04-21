@@ -1,6 +1,7 @@
+from datetime import date
 from typing import Dict, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class ForecastPlaceholder(BaseModel):
@@ -8,17 +9,19 @@ class ForecastPlaceholder(BaseModel):
 
 
 class SupplementalHistoryPoint(BaseModel):
-    week: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    week_start: date = Field(validation_alias=AliasChoices("week_start", "week"), serialization_alias="week_start")
     quantity: int = Field(ge=0)
 
 
 class DrugForecastRequest(BaseModel):
     location_id: str
     din: str
-    horizon_days: Literal[7, 14, 30] = 7
+    horizon_days: int = Field(default=7, ge=1)
     quantity_on_hand: int = Field(..., ge=0)
     lead_time_days: int = Field(default=2, ge=1)
-    safety_multiplier: Literal[1.5, 1.0, 0.75] = 1.0
+    safety_multiplier: float = Field(default=1.0, gt=0)
     red_threshold_days: int = Field(default=3, ge=1)
     amber_threshold_days: int = Field(default=7, ge=1)
     supplemental_history: Optional[list[SupplementalHistoryPoint]] = None

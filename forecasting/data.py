@@ -26,6 +26,7 @@ FORECAST_COLUMN_ORDER = [
     "train_end_date",
     "horizon_length",
     "history_points_used",
+    "model_path",
     "confidence_label",
     "anomaly_flag",
     "anomaly_reason",

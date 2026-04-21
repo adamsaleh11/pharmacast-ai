@@ -1,13 +1,27 @@
-step,forecast_date,train_start,train_end,train_rows,actual_rows
-1,2026-01-26,2025-12-01,2026-01-19,40,5
-2,2026-02-02,2025-12-01,2026-01-26,45,5
-3,2026-02-09,2025-12-01,2026-02-02,50,5
-4,2026-02-16,2025-12-01,2026-02-09,55,5
-5,2026-02-23,2025-12-01,2026-02-16,60,5
-6,2026-03-02,2025-12-01,2026-02-23,65,5
-7,2026-03-09,2025-12-01,2026-03-02,70,5
-8,2026-03-16,2025-12-01,2026-03-09,75,5
-9,2026-03-23,2025-12-01,2026-03-16,80,5
-10,2026-03-30,2025-12-01,2026-03-23,85,5
-11,2026-04-06,2025-12-01,2026-03-30,90,5
-12,2026-04-13,2025-12-01,2026-04-06,95,5
+step_number,train_row_count,actual_row_count,train_start_date,train_end_date,forecast_date,actual_start_date,actual_end_date,num_dins,notes
+1,180,6,2025-04-07,2025-10-27,2025-11-03,2025-11-03,2025-11-03,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+2,186,6,2025-04-07,2025-11-03,2025-11-10,2025-11-10,2025-11-10,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+3,192,6,2025-04-07,2025-11-10,2025-11-17,2025-11-17,2025-11-17,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+4,198,6,2025-04-07,2025-11-17,2025-11-24,2025-11-24,2025-11-24,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+5,204,6,2025-04-07,2025-11-24,2025-12-01,2025-12-01,2025-12-01,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+6,210,6,2025-04-07,2025-12-01,2025-12-08,2025-12-08,2025-12-08,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+7,216,6,2025-04-07,2025-12-08,2025-12-15,2025-12-15,2025-12-15,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+8,222,6,2025-04-07,2025-12-15,2025-12-22,2025-12-22,2025-12-22,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+9,228,6,2025-04-07,2025-12-22,2025-12-29,2025-12-29,2025-12-29,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+10,234,6,2025-04-07,2025-12-29,2026-01-05,2026-01-05,2026-01-05,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+11,240,6,2025-04-07,2026-01-05,2026-01-12,2026-01-12,2026-01-12,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+12,246,6,2025-04-07,2026-01-12,2026-01-19,2026-01-19,2026-01-19,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+13,252,6,2025-04-07,2026-01-19,2026-01-26,2026-01-26,2026-01-26,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+14,258,6,2025-04-07,2026-01-26,2026-02-02,2026-02-02,2026-02-02,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+15,264,6,2025-04-07,2026-02-02,2026-02-09,2026-02-09,2026-02-09,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+16,270,6,2025-04-07,2026-02-09,2026-02-16,2026-02-16,2026-02-16,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+17,276,6,2025-04-07,2026-02-16,2026-02-23,2026-02-23,2026-02-23,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+18,282,6,2025-04-07,2026-02-23,2026-03-02,2026-03-02,2026-03-02,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+19,288,6,2025-04-07,2026-03-02,2026-03-09,2026-03-09,2026-03-09,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+20,294,6,2025-04-07,2026-03-09,2026-03-16,2026-03-16,2026-03-16,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+21,300,6,2025-04-07,2026-03-16,2026-03-23,2026-03-23,2026-03-23,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+22,306,6,2025-04-07,2026-03-23,2026-03-30,2026-03-30,2026-03-30,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+23,312,6,2025-04-07,2026-03-30,2026-04-06,2026-04-06,2026-04-06,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+24,318,6,2025-04-07,2026-04-06,2026-04-13,2026-04-13,2026-04-13,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+25,324,6,2025-04-07,2026-04-13,2026-04-20,2026-04-20,2026-04-20,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.
+26,330,6,2025-04-07,2026-04-20,2026-04-27,2026-04-27,2026-04-27,6,One-week rolling-origin step using only past data; Prophet-eligible by training length.

@@ -37,7 +37,12 @@ class DemandHistoryPreparer:
 
         merged = {row["ds"]: float(row["y"]) for row in weekly_rows}
         for item in supplemental_history:
-            week_value = item.week if hasattr(item, "week") else item["week"]
+            if hasattr(item, "week_start"):
+                week_value = item.week_start
+            elif hasattr(item, "week"):
+                week_value = item.week
+            else:
+                week_value = item["week_start"] if "week_start" in item else item["week"]
             quantity = item.quantity if hasattr(item, "quantity") else item["quantity"]
             week = week_start_monday(parse_date(week_value))
             merged[week] = merged.get(week, 0.0) + float(quantity)

@@ -9,12 +9,83 @@ from apps.forecast_service.app.services.domain import ForecastPrediction, Foreca
 
 MIN_PROPHET_HISTORY_POINTS = 26
 MIN_YEARLY_SEASONALITY_POINTS = 104
+MIN_XGBOOST_HISTORY_POINTS = 12
 RECENT_AVERAGE_WINDOW = 2
+XGBOOST_LAGS = (1, 2, 4, 8)
+MODEL_PATH_PROPHET = "prophet"
+MODEL_PATH_XGBOOST_RESIDUAL = "xgboost_residual_interval"
+MODEL_PATH_FALLBACK_RECENT_TREND = "fallback_recent_trend"
+MODEL_PATH_FALLBACK_UNSAFE_PROPHET = "fallback_unsafe_prophet_output"
+MODEL_PATH_FALLBACK_UNSAFE_XGBOOST = "fallback_unsafe_xgboost_output"
 
 
 class ForecastModelRunner(Protocol):
     def forecast(self, weekly_rows: list[dict[str, Any]], horizon_days: int) -> ForecastPrediction:
         ...
+
+
+class XGBoostModelRunner:
+    """Recursive weekly demand model with lag features and calibrated residual intervals."""
+
+    def forecast(self, weekly_rows: list[dict[str, Any]], horizon_days: int) -> ForecastPrediction:
+        try:
+            import pandas as pd
+            import xgboost as xgb
+        except ImportError as exc:  # pragma: no cover - optional runtime dependency
+            raise ForecastingError("forecast_dependencies_missing") from exc
+
+        if not weekly_rows:
+            raise ForecastingError("insufficient_weekly_data")
+
+        frame = complete_weekly_history(normalize_weekly_history(weekly_rows))
+        horizon_weeks = max(1, (horizon_days + 6) // 7)
+        if not history_supports_xgboost(frame):
+            fallback_window = fallback_weekly_forecast(frame, horizon_weeks)
+            return summarize_horizon_forecast(
+                fallback_window,
+                horizon_periods=horizon_weeks,
+                model_path=MODEL_PATH_FALLBACK_RECENT_TREND,
+            )
+
+        train_frame = build_xgboost_training_frame(frame)
+        if train_frame.empty:
+            fallback_window = fallback_weekly_forecast(frame, horizon_weeks)
+            return summarize_horizon_forecast(
+                fallback_window,
+                horizon_periods=horizon_weeks,
+                model_path=MODEL_PATH_FALLBACK_RECENT_TREND,
+            )
+
+        feature_columns = xgboost_feature_columns()
+        features = train_frame[feature_columns].to_numpy(dtype=float)
+        target = train_frame["target"].to_numpy(dtype=float)
+
+        matrix = xgb.DMatrix(features, target)
+        booster = xgb.train(
+            xgboost_point_params(),
+            matrix,
+            num_boost_round=xgboost_boost_rounds(len(train_frame)),
+            verbose_eval=False,
+        )
+        residual_spread = xgboost_residual_spread(target, booster.inplace_predict(features))
+
+        forecast = recursive_xgboost_point_forecast(
+            booster=booster,
+            history=frame,
+            horizon_periods=horizon_weeks,
+            residual_spread=residual_spread,
+        )
+        if forecast_has_unsafe_values(forecast):
+            forecast = fallback_weekly_forecast(frame, horizon_weeks)
+            model_path = MODEL_PATH_FALLBACK_UNSAFE_XGBOOST
+        else:
+            model_path = MODEL_PATH_XGBOOST_RESIDUAL
+
+        return summarize_horizon_forecast(
+            forecast,
+            horizon_periods=horizon_weeks,
+            model_path=model_path,
+        )
 
 
 class ProphetModelRunner:
@@ -32,7 +103,11 @@ class ProphetModelRunner:
         horizon_weeks = max(1, (horizon_days + 6) // 7)
         if not history_supports_prophet(frame):
             fallback_window = fallback_weekly_forecast(frame, horizon_weeks)
-            return summarize_horizon_forecast(fallback_window, horizon_periods=horizon_weeks)
+            return summarize_horizon_forecast(
+                fallback_window,
+                horizon_periods=horizon_weeks,
+                model_path=MODEL_PATH_FALLBACK_RECENT_TREND,
+            )
 
         holidays = pd.DataFrame(
             build_ontario_holidays(int(frame["ds"].dt.year.min()), int(frame["ds"].dt.year.max()) + 2)
@@ -52,14 +127,17 @@ class ProphetModelRunner:
         if forecast_has_unsafe_values(forecast):
             forecast = fallback_weekly_forecast(frame, horizon_weeks)
             samples = None
+            model_path = MODEL_PATH_FALLBACK_UNSAFE_PROPHET
         else:
             samples = model.predictive_samples(future)
+            model_path = MODEL_PATH_PROPHET
         interval_width = getattr(model, "interval_width", 0.8)
         return summarize_horizon_forecast(
             forecast,
             horizon_periods=horizon_weeks,
             interval_width=float(interval_width),
             predictive_samples=samples,
+            model_path=model_path,
         )
 
 
@@ -79,8 +157,175 @@ def normalize_weekly_history(records: list[dict[str, Any]]) -> Any:
     return frame.groupby("ds", as_index=False)["y"].sum().sort_values("ds").reset_index(drop=True)
 
 
+def complete_weekly_history(frame: Any) -> Any:
+    import pandas as pd
+
+    if frame.empty:
+        return frame
+    start = pd.to_datetime(frame["ds"].min())
+    end = pd.to_datetime(frame["ds"].max())
+    weekly_index = pd.date_range(start=start, end=end, freq="W-MON")
+    return (
+        frame.set_index("ds")
+        .reindex(weekly_index, fill_value=0.0)
+        .rename_axis("ds")
+        .reset_index()
+        .astype({"y": float})
+    )
+
+
 def history_supports_prophet(frame: Any) -> bool:
     return len(frame) >= MIN_PROPHET_HISTORY_POINTS and float(frame["y"].astype(float).sum()) > 0.0
+
+
+def history_supports_xgboost(frame: Any) -> bool:
+    return len(frame) >= MIN_XGBOOST_HISTORY_POINTS and float(frame["y"].astype(float).sum()) > 0.0
+
+
+def xgboost_feature_columns() -> list[str]:
+    return [
+        "lag_1",
+        "lag_2",
+        "lag_4",
+        "lag_8",
+        "rolling_mean_2",
+        "rolling_mean_4",
+        "rolling_mean_8",
+        "rolling_std_4",
+        "trend_4",
+        "nonzero_ratio_8",
+        "week_sin",
+        "week_cos",
+        "month_sin",
+        "month_cos",
+        "time_index",
+    ]
+
+
+def build_xgboost_training_frame(frame: Any) -> Any:
+    import pandas as pd
+
+    rows: list[dict[str, float]] = []
+    values = frame["y"].astype(float).to_numpy()
+    dates = pd.to_datetime(frame["ds"]).tolist()
+    max_lag = max(XGBOOST_LAGS)
+    for index in range(max_lag, len(values)):
+        rows.append(
+            {
+                **xgboost_features_for_step(
+                    history_values=values[:index].tolist(),
+                    forecast_date=dates[index],
+                    time_index=index,
+                ),
+                "target": float(values[index]),
+            }
+        )
+    return pd.DataFrame(rows, columns=xgboost_feature_columns() + ["target"])
+
+
+def xgboost_features_for_step(history_values: list[float], forecast_date: Any, time_index: int) -> dict[str, float]:
+    import pandas as pd
+
+    values = [float(value) for value in history_values]
+    timestamp = pd.Timestamp(forecast_date)
+    week = int(timestamp.isocalendar().week)
+    month = int(timestamp.month)
+    recent_2 = values[-2:]
+    recent_4 = values[-4:]
+    recent_8 = values[-8:]
+    return {
+        "lag_1": values[-1],
+        "lag_2": values[-2],
+        "lag_4": values[-4],
+        "lag_8": values[-8],
+        "rolling_mean_2": float(np.mean(recent_2)),
+        "rolling_mean_4": float(np.mean(recent_4)),
+        "rolling_mean_8": float(np.mean(recent_8)),
+        "rolling_std_4": float(np.std(recent_4, ddof=0)),
+        "trend_4": _recent_trend_slope(recent_4) or 0.0,
+        "nonzero_ratio_8": float(np.count_nonzero(recent_8) / len(recent_8)),
+        "week_sin": float(np.sin(2.0 * np.pi * week / 52.0)),
+        "week_cos": float(np.cos(2.0 * np.pi * week / 52.0)),
+        "month_sin": float(np.sin(2.0 * np.pi * month / 12.0)),
+        "month_cos": float(np.cos(2.0 * np.pi * month / 12.0)),
+        "time_index": float(time_index),
+    }
+
+
+def xgboost_point_params() -> dict[str, Any]:
+    return {
+        "objective": "reg:squarederror",
+        "tree_method": "hist",
+        "learning_rate": 0.03,
+        "max_depth": 2,
+        "min_child_weight": 1,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "reg_lambda": 6.0,
+        "reg_alpha": 0.1,
+        "eval_metric": "mae",
+        "seed": 42,
+        "nthread": 1,
+        "verbosity": 0,
+    }
+
+
+def xgboost_boost_rounds(training_rows: int) -> int:
+    if training_rows < 16:
+        return 64
+    if training_rows < 32:
+        return 96
+    return 96
+
+
+def xgboost_residual_spread(actual: Any, predicted: Any) -> float:
+    residuals = np.asarray(actual, dtype=float) - np.asarray(predicted, dtype=float)
+    if residuals.size == 0:
+        return 2.0
+    absolute_residuals = np.abs(residuals)
+    return max(
+        float(np.quantile(absolute_residuals, 0.9)),
+        float(np.std(residuals, ddof=0) * 1.96),
+        2.0,
+    )
+
+
+def recursive_xgboost_point_forecast(
+    booster: Any,
+    history: Any,
+    horizon_periods: int,
+    residual_spread: float,
+) -> Any:
+    import pandas as pd
+
+    values = history["y"].astype(float).tolist()
+    dates = pd.to_datetime(history["ds"]).tolist()
+    predictions: list[dict[str, Any]] = []
+    for period in range(horizon_periods):
+        forecast_date = dates[-1] + pd.Timedelta(days=7)
+        feature_row = xgboost_features_for_step(
+            history_values=values,
+            forecast_date=forecast_date,
+            time_index=len(values),
+        )
+        feature_array = np.asarray([[feature_row[column] for column in xgboost_feature_columns()]], dtype=float)
+        prediction = booster.inplace_predict(feature_array)
+        center = max(0.0, float(np.asarray(prediction, dtype=float)[0]))
+        spread = residual_spread * float(np.sqrt(period + 1))
+        center = max(0.0, center)
+        lower = max(0.0, center - spread)
+        upper = center + spread
+        predictions.append(
+            {
+                "ds": forecast_date,
+                "yhat": center,
+                "yhat_lower": lower,
+                "yhat_upper": upper,
+            }
+        )
+        values.append(center)
+        dates.append(forecast_date)
+    return pd.DataFrame(predictions)
 
 
 def forecast_has_unsafe_values(frame: Any) -> bool:
@@ -143,6 +388,7 @@ def summarize_horizon_forecast(
     horizon_periods: int,
     interval_width: float = 0.8,
     predictive_samples: Any | None = None,
+    model_path: str = MODEL_PATH_PROPHET,
 ) -> ForecastPrediction:
     predicted_total = _sum_column(forecast_window, "yhat")
 
@@ -169,6 +415,7 @@ def summarize_horizon_forecast(
         prophet_lower=prophet_lower,
         prophet_upper=prophet_upper,
         confidence=confidence,
+        model_path=model_path,
     )
 
 

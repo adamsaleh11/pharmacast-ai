@@ -13,6 +13,7 @@ class ForecastPrediction:
     prophet_lower: int
     prophet_upper: int
     confidence: str
+    model_path: str
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class ForecastResult:
     prophet_lower: int
     prophet_upper: int
     confidence: str
+    model_path: str
     days_of_supply: float
     avg_daily_demand: float
     reorder_status: str
