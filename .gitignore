@@ -1,0 +1,15 @@
+.env
+
+# Generated backtest/report outputs
+artifacts/
+
+# Python local/runtime files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/

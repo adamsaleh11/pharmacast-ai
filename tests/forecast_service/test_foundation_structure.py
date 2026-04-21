@@ -22,7 +22,7 @@ def test_forecast_service_source_excludes_language_generation_concerns():
         assert term not in combined_source
 
 
-def test_prophet_is_deferred_until_real_forecasting_exists():
+def test_prophet_is_declared_for_real_forecasting():
     dependency_files = [
         ROOT / "pyproject.toml",
         ROOT / "requirements.txt",
@@ -31,7 +31,7 @@ def test_prophet_is_deferred_until_real_forecasting_exists():
 
     combined_dependencies = "\n".join(path.read_text().lower() for path in dependency_files)
 
-    assert "prophet" not in combined_dependencies
+    assert "prophet" in combined_dependencies
 
 
 def test_forecast_service_has_independent_dockerfile():

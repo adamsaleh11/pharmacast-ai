@@ -1,7 +1,8 @@
 from shared.config.settings import load_settings
 
 
-def test_settings_use_default_port_and_optional_supabase_values(monkeypatch):
+def test_settings_use_default_port_and_optional_supabase_values(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("PORT", raising=False)
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
@@ -13,7 +14,8 @@ def test_settings_use_default_port_and_optional_supabase_values(monkeypatch):
     assert settings.supabase_service_key is None
 
 
-def test_settings_read_environment_overrides(monkeypatch):
+def test_settings_read_environment_overrides(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PORT", "9000")
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "service-key")
