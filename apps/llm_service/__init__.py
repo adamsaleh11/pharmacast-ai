@@ -1,2 +1,1 @@
-"""Future standalone language service package."""
-
+"""Standalone LLM service package."""

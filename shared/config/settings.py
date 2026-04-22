@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     supabase_url: Optional[str] = None
     supabase_service_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
+    groq_model: Optional[str] = None
     port: int = 8000
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

@@ -14,7 +14,33 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
-        return json.dumps(payload)
+        standard_keys = {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
+        }
+        for key, value in record.__dict__.items():
+            if key not in standard_keys and not key.startswith("_"):
+                payload[key] = value
+        return json.dumps(payload, default=str)
 
 
 def configure_logging(level: int = logging.INFO) -> None:

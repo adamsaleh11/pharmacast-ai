@@ -9,9 +9,11 @@ description = "Shared Python services for PharmaForecast forecasting and LLM wor
 requires-python = ">=3.9"
 dependencies = [
   "fastapi>=0.110,<1.0",
+  "httpx>=0.27,<1.0",
   "numpy>=1.26,<3.0",
   "pandas>=2.0,<3.0",
   "prophet>=1.1,<2.0",
+  "pydantic>=2.0,<3.0",
   "pydantic-settings>=2.0,<3.0",
   "python-dateutil>=2.8,<3.0",
   "supabase>=2.0,<3.0",
