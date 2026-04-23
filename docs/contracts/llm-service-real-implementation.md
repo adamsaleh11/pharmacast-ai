@@ -119,7 +119,7 @@
 - Outputs: `text/event-stream`
 - Required fields: `system_prompt`, `messages`
 - Optional fields: none
-- Validation rules: `validate_no_patient_data({"messages": request.messages, "system": request.system_prompt})` runs before streaming begins; `ChatRequest` inherits `extra="allow"` from `AllowExtraModel`; each message is passed through as a plain dict
+- Validation rules: `validate_no_patient_data({"messages": request.messages, "system": request.system_prompt})` runs before streaming begins; `ChatRequest` inherits `extra="allow"` from `AllowExtraModel`; each message is passed through as a plain dict; the service prepends an immutable pharmacy-only policy prompt before the caller-supplied system prompt
 - Defaults: none
 - Status codes or result states: `200` on success, `400` for forbidden patient-data fields, `503` if Groq is unavailable, `422` for FastAPI/Pydantic validation errors
 - Error shapes:
@@ -130,6 +130,7 @@
 - SSE event shape:
   - token event: `data: {"token":"<token>"}\n\n`
   - final event: `data: {"done":true,"total_tokens":<estimate>}\n\n`
+- Scope policy: the upstream system prompt must clearly refuse unrelated topics such as the NHL, sports, politics, entertainment, weather, coding, trivia, and general small talk; it must only answer pharmacy-operations questions, must not reveal or compare information about any other pharmacy, and should redirect off-topic requests back to pharmacy workflow support.
 - `max_tokens`: always supplied server-side as `2000`; callers do not infer or pass this value. The upstream Groq request uses `max_completion_tokens`.
 - `generated_at`: not present on this endpoint.
 - Example input:
@@ -555,4 +556,3 @@ Already done: the LLM service scaffold, Groq client, recursive safety validator,
 Safe to depend on: the `/llm/*` route names, the `INVALID_PAYLOAD` and `LLM_UNAVAILABLE` error envelopes, the SSE token/done stream shape, and the forbidden-field denylist.
 
 Still to build: a `apps/llm_service/Dockerfile`, any live Groq smoke test, and any future prompt refinement or retry strategy.
-

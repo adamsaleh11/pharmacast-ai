@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 
 import shared.grok_client as grok_client
 from apps.llm_service.app.schemas.chat import ChatRequest
+from apps.llm_service.app.services.chat_policy import build_chat_messages
 from shared.validators import validate_no_patient_data
 
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 @router.post("")
 async def chat(request: ChatRequest):
     validate_no_patient_data({"messages": request.messages, "system": request.system_prompt})
-    messages = [{"role": "system", "content": request.system_prompt}, *request.messages]
+    messages = build_chat_messages(request.system_prompt, request.messages)
 
     async def event_stream():
         emitted_text = []

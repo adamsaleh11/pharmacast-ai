@@ -1,12 +1,15 @@
 from fastapi.testclient import TestClient
 
 from apps.llm_service.app.main import app
+from apps.llm_service.app.services.chat_policy import PHARMACY_CHAT_POLICY
 from shared import grok_client
 
 
 def test_chat_endpoint_streams_sse_events(monkeypatch):
     async def fake_stream_grok(messages, max_tokens):
         assert messages[0]["role"] == "system"
+        assert PHARMACY_CHAT_POLICY in messages[0]["content"]
+        assert "You are a helpful assistant." in messages[0]["content"]
         assert max_tokens == 2000
         yield "Hel"
         yield "lo"
@@ -30,6 +33,14 @@ def test_chat_endpoint_streams_sse_events(monkeypatch):
     assert 'data: {"token": "Hel"}' in body
     assert 'data: {"token": "lo"}' in body
     assert 'data: {"done": true, "total_tokens": 1}' in body
+
+
+def test_chat_policy_explicitly_blocks_unrelated_topics():
+    assert "NHL" in PHARMACY_CHAT_POLICY
+    assert "do not answer the question" in PHARMACY_CHAT_POLICY
+    assert "pharmacy operations" in PHARMACY_CHAT_POLICY
+    assert "any other pharmacy" in PHARMACY_CHAT_POLICY
+    assert "Other pharmacies are strictly off-limits" in PHARMACY_CHAT_POLICY
 
 
 def test_chat_endpoint_rejects_nested_patient_data():
